@@ -3,8 +3,11 @@ const async = {
   each: require('async/each'),
   eachLimit: require('async/eachLimit')
 }
+const escapeHtml = require('escape-html')
 
 const httpGet = require('./httpGet')
+const convertFromXML = require('./convertFromXML')
+const OSMDB = require('./OSMDB')
 
 const routeTypes = {
   'tram': {
@@ -48,22 +51,24 @@ window.onload = function () {
   let stopLayer = L.featureGroup()
   map.addLayer(stopLayer)
 
-  let routes = []
-  let elements = {}
   let coverageData = {}
 
-  let file = 'data'
+  let file = 'data.osm'
   if (location.search) {
     file = location.search.substr(1)
   }
 
-  httpGet(file + '.json', {}, (err, result) => {
+  httpGet(file, { type: 'auto' }, (err, result) => {
     if (err) {
       console.log(err)
       return alert("Can't download geojson file " + file + '.json')
     }
 
-    result = JSON.parse(result.body)
+    if (result.request.responseXML) {
+      result = convertFromXML(result.request.responseXML.firstChild)
+    } else {
+      result = JSON.parse(result.body)
+    }
 
     if ('marker' in result) {
       result.marker.forEach(
@@ -77,24 +82,15 @@ window.onload = function () {
       )
     }
 
-    async.eachLimit(result.elements, 32,
-      (element, done) => {
-        let id = element.type + '/' + element.id
-        elements[id] = element
-
-        if (element.type === 'relation' && element.tags && element.tags.type === 'route') {
-          routes.push(element)
-        }
-
-        done()
-      },
+    let db = new OSMDB()
+    db.read(result,
       (err) => {
-        async.eachLimit(routes, 4,
+        async.eachLimit(db.routes, 4,
           (route, done) => {
             async.each(route.members,
               (member, done) => {
                 let memberId = member.type + '/' + member.ref
-                let element = elements[memberId]
+                let element = db.get(member.type, member.ref)
 
                 if (!element) {
                   console.log("Can't find element " + memberId)
@@ -113,7 +109,8 @@ window.onload = function () {
                 }
 
                 if (member.role === '' && member.type === 'way') {
-                  let way = L.polyline(element.geometry.map((geom => [ geom.lat, geom.lon ])),
+                  let geometry = db.assembleGeometry(element)
+                  let way = L.polyline(geometry.map((geom => [ geom.lat, geom.lon ])),
                   {
                     weight: 1.5,
                     color: route.tags.route in routeTypes ? routeTypes[route.tags.route].color : '#000000'
@@ -133,7 +130,10 @@ window.onload = function () {
                     stopLayer.addLayer(member.feature)
                   }
 
-                  member.feature.bindPopup(element.routes.map(route => route.tags.name).join('<br>'))
+                  member.feature.bindPopup(
+                    '<b>' + escapeHtml(element.tags.name) + '</b><br>' +
+                    element.routes.map(route => escapeHtml(route.tags.name)).join('<br>')
+                  )
                 }
 
                 done()

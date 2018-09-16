@@ -10,7 +10,7 @@ function httpGet (url, options, callback) {
       }
 
       if (xhr.status === 200) {
-        callback(null, { body: xhr.responseText })
+        callback(null, { body: xhr.responseText, request: xhr })
       } else {
         callback(xhr.responseText)
       }
@@ -20,7 +20,9 @@ function httpGet (url, options, callback) {
   function direct () {
     xhr = new XMLHttpRequest()
     xhr.open('get', url, true)
-    xhr.responseType = 'text'
+    if (options.type !== 'auto') {
+      xhr.responseType = 'text'
+    }
     xhr.onreadystatechange = readyStateChange
     xhr.send()
   }
@@ -28,7 +30,9 @@ function httpGet (url, options, callback) {
   function viaServer () {
     xhr = new XMLHttpRequest()
     xhr.open('get', 'httpGet.php?url=' + encodeURIComponent(url), true)
-    xhr.responseType = 'text'
+    if (options.type !== 'auto') {
+      xhr.responseType = 'text'
+    }
     xhr.onreadystatechange = readyStateChange
     xhr.send()
   }

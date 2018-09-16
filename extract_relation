@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+const fs = require('fs')
+const xmldom = require('xmldom')
+
+const convertFromXML = require('./src/convertFromXML')
+const OSMDB = require('./src/OSMDB')
+
+if (process.argv.length < 4) {
+  console.log('Usage: ./extract_relation <inputFile> <outputFile>')
+  console.log('You may use OSM JSON or OSM XML as input')
+  console.log('You may use OSM JSON or OSM XML as output')
+  process.exit(1)
+}
+
+let content = fs.readFileSync(process.argv[2])
+let result
+try {
+  result = JSON.parse(content)
+} catch (e) {
+  content = new xmldom.DOMParser().parseFromString(content.toString(), 'text/xml')
+  result = convertFromXML(content.getElementsByTagName('osm')[0])
+}
+
+let toExport = {}
+
+let db = new OSMDB()
+db.read(result,
+  (err) => {
+    let routes = db.routes
+    //let routes = db.routes.filter(route => [ '10A', '52', '10', '60', '57A' ].indexOf(route.tags.ref) !== -1)
+
+    routes.forEach(
+      (route) => {
+        toExport[route.type + '/' + route.id] = true
+
+        route.members.forEach(
+          (member) => {
+            toExport[member.type + '/' + member.ref] = true
+            let el = db.get(member.type, member.ref)
+
+            if (el && el.type === 'way' && !el.geometry) {
+              el.nodes.forEach(
+                (node) => {
+                  toExport['node/' + node] = true
+                }
+              )
+            }
+          }
+        )
+      }
+    )
+
+    let elements = Object.keys(toExport)
+      .map(id => db.get(id))
+      .filter(el => el)
+
+    if (process.argv[3].match(/\.json$/)) {
+      fs.writeFileSync(process.argv[3], JSON.stringify({
+        elements
+      }, null, '  '))
+    } else {
+      let doc = new xmldom.DOMParser().parseFromString('<?xml version="1.0" encoding="UTF-8"?><osm version="0.6"></osm>')
+      let osm = doc.getElementsByTagName('osm')[0]
+
+      elements.forEach(
+        (element) => {
+          let x = doc.createElement(element.type)
+          x.setAttribute('id', element.id)
+
+          for (var k in element.tags) {
+            let tag = doc.createElement('tag')
+            tag.setAttribute('k', k)
+            tag.setAttribute('v', element.tags[k])
+            x.appendChild(tag)
+          }
+
+          switch (element.type) {
+            case 'node':
+              x.setAttribute('lat', element.lat)
+              x.setAttribute('lon', element.lon)
+              break
+            case 'way':
+              element.nodes.forEach(
+                (ref) => {
+                  let nd = doc.createElement('nd')
+                  nd.setAttribute('ref', ref)
+                  x.appendChild(nd)
+                }
+              )
+              break
+            case 'relation':
+              element.members.forEach(
+                (ref) => {
+                  let member = doc.createElement('member')
+                  member.setAttribute('type', ref.type)
+                  member.setAttribute('ref', ref.ref)
+                  member.setAttribute('role', ref.role)
+                  x.appendChild(member)
+                }
+              )
+          }
+
+          osm.appendChild(x)
+        }
+      )
+
+      let serializer = new xmldom.XMLSerializer()
+      fs.writeFileSync(process.argv[3], serializer.serializeToString(doc))
+    }
+  }
+)

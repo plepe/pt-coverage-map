@@ -1,4 +1,4 @@
-[out:json];
+[out:xml];
 (
 relation(1306559);
 relation(1306560);
@@ -8,10 +8,7 @@ relation(1800603);
 relation(1800604);
 relation(6280685);
 relation(6280687);
-)->.routes;
-.routes out body;
-(
-  way(r.routes);
-  node(r.routes);
 );
-out body geom;
+out meta;
+>;
+out meta;
