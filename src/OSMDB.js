@@ -15,7 +15,11 @@ class OSMDB {
         let id = element.type + '/' + element.id
         this.elements[id] = element
 
-        if (element.type === 'relation' && element.tags && element.tags.type === 'route') {
+        if (!('tags' in element)) {
+          element.tags = {}
+        }
+
+        if (element.type === 'relation' && element.tags.type === 'route') {
           this.routes.push(element)
         }
 
