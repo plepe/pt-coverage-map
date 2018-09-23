@@ -18,8 +18,16 @@ const routeTypes = {
   }
 }
 
+function comfort (el) {
+  if (!el.tags || !el.tags.comfort) {
+    return '#000000'
+  }
+
+  return [ '#ff0000', '#ff7f00', '#007f00' ][el.tags.comfort - 1]
+}
+
 window.onload = function () {
-  var map = L.map('map')
+  var map = L.map('map').setView([ 48.19, 16.36 ], 14)
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -47,6 +55,8 @@ window.onload = function () {
 
   let stopLayer = L.featureGroup()
   map.addLayer(stopLayer)
+  let nodePane = map.createPane('node')
+  map.getPane('node').style.zIndex = 650
 
   let coverageData = {}
 
@@ -82,80 +92,33 @@ window.onload = function () {
     let db = new OSMDB()
     db.read(result,
       (err) => {
-        async.eachLimit(db.routes, 4,
-          (route, done) => {
-            async.each(route.members,
-              (member, done) => {
-                let memberId = member.type + '/' + member.ref
-                let element = db.get(member.type, member.ref)
+        async.each(db.elements,
+          (element, done) => {
 
-                if (!element) {
-                  console.log("Can't find element " + memberId)
-                  return done()
-                }
+            if (element.type === 'way') {
+              let geometry = db.assembleGeometry(element)
+              let way = L.polyline(geometry.map((geom) => [ geom.lat, geom.lon ]),
+                {
+                  weight: 4,
+                  color: comfort(element)
+                })
+              routeLayer.addLayer(way)
+            }
 
-                if (!element.routes) {
-                  element.routes = []
-                }
-                element.routes.push(route)
+            if (element.type === 'node' && element.tags && element.tags.node) {
+                let feature = L.circleMarker([ element.lat, element.lon ],
+                {
+                  radius: 8,
+                  weight: 0,
+                  fillColor: '#000000',
+                  fillOpacity: 1,
+                  pane: 'node'
+                })
+              stopLayer.addLayer(feature)
+            }
 
-                if (member.role === 'stop') {
-                  if (!(memberId in coverageData)) {
-                    coverageData[memberId] = [ element.lat, element.lon ]
-                  }
-                }
-
-                if (member.role === '' && member.type === 'way') {
-                  let geometry = db.assembleGeometry(element)
-                  let way = L.polyline(geometry.map((geom => [ geom.lat, geom.lon ])),
-                  {
-                    weight: 1.5,
-                    color: route.tags.route in routeTypes ? routeTypes[route.tags.route].color : '#000000'
-                  })
-                  routeLayer.addLayer(way)
-                }
-
-                if (member.role === 'stop' && member.type === 'node') {
-                  if (!member.feature) {
-                    member.feature = L.circleMarker([ element.lat, element.lon ],
-                    {
-                      radius: 4,
-                      weight: 0,
-                      fillColor: route.tags.route in routeTypes ? routeTypes[route.tags.route].color : '#000000',
-                      fillOpacity: 1
-                    })
-                    stopLayer.addLayer(member.feature)
-                  }
-
-                  member.feature.bindPopup(
-                    '<b>' + escapeHtml(element.tags.name) + '</b><br>' +
-                    element.routes.map(route => escapeHtml(route.tags.name)).join('<br>')
-                  )
-                }
-
-                done()
-              },
-              (err) => {
-                done(err)
-              }
-            )
-          },
-          (err) => {
-            let data = Object.values(coverageData)
-            coverageLayer1.setData(data)
-            coverageLayer2.setData(data)
-
-            let bounds = new BoundingBox(data[0])
-            data.slice(1).forEach(
-              (value) => {
-                bounds.extend(value)
-              }
-            )
-
-            map.fitBounds(bounds.toLeaflet())
-          }
-        )
-      }
-    )
+            done()
+         })
+      })
   })
 }
