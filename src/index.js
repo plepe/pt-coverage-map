@@ -100,15 +100,17 @@ window.onload = function () {
                   opacity: 0
                 })
 
+                let forward = element.tags.direction !== 'backward'
                 let decorator = L.polylineDecorator(way, {
                   patterns: [
                     {
-                      offset: 5,
-                      repeat: 7,
+                      offset: forward ? 5 : 0,
+                      endOffset: forward ? 0 : 5,
+                      repeat: 6,
                       symbol:
-                        element.tags.direction === 'forward'
-                          ? L.Symbol.arrowHead({ angleCorrection: 0, pixelSize: 5, polygon: false, pathOptions: {stroke: true, color: comfort(element) } })
-                          : L.Symbol.arrowHead({ angleCorrection: 180, pixelSize: 5, polygon: false, pathOptions: {stroke: true, color: comfort(element), headAngle: 90 } })
+                        forward
+                          ? L.Symbol.arrowHead({ angleCorrection: 0, pixelSize: 4, polygon: false, pathOptions: {stroke: true, weight: 2, color: comfort(element) } })
+                          : L.Symbol.arrowHead({ angleCorrection: 180, pixelSize: 4, polygon: false, pathOptions: {stroke: true, weight: 2, color: comfort(element), headAngle: 90 } })
                     }
                   ]
                 }).addTo(map);
