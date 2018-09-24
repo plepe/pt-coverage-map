@@ -9,15 +9,6 @@ const httpGet = require('./httpGet')
 const convertFromXML = require('./convertFromXML')
 const OSMDB = require('./OSMDB')
 
-const routeTypes = {
-  'tram': {
-    color: '#ff0000'
-  },
-  'bus': {
-    color: '#0000ff'
-  }
-}
-
 function comfort (el) {
   if (!el.tags || !el.tags.comfort) {
     return '#000000'
@@ -103,6 +94,25 @@ window.onload = function () {
                   color: comfort(element)
                 })
               routeLayer.addLayer(way)
+
+              if (element.tags.direction) {
+                way.setStyle({
+                  opacity: 0
+                })
+
+                let decorator = L.polylineDecorator(way, {
+                  patterns: [
+                    {
+                      offset: 5,
+                      repeat: 7,
+                      symbol:
+                        element.tags.direction === 'forward'
+                          ? L.Symbol.arrowHead({ angleCorrection: 0, pixelSize: 5, polygon: false, pathOptions: {stroke: true, color: comfort(element) } })
+                          : L.Symbol.arrowHead({ angleCorrection: 180, pixelSize: 5, polygon: false, pathOptions: {stroke: true, color: comfort(element), headAngle: 90 } })
+                    }
+                  ]
+                }).addTo(map);
+              }
             }
 
             if (element.type === 'node' && element.tags && element.tags.node) {
