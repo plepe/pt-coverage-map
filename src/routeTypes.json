@@ -1,0 +1,30 @@
+{
+  "tram": {
+    "color": "#7f0000"
+  },
+  "bus": {
+    "color": "#0000ff"
+  },
+  "ferry": {
+    "color": "#007fff"
+  },
+  "subway": {
+    "color": "#ff0000"
+  },
+  "train": {
+    "color": "#3f3f3f"
+  },
+  "monorail": {
+    "color": "#007f00"
+  },
+  "trolleybus": {
+    "color": "#7f00ff"
+  },
+  "aerialway": {
+    "color": "#00ff00"
+  },
+  "default": {
+    "color": "#000000"
+  }
+}
+

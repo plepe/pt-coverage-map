@@ -1,25 +1,17 @@
-const boundingbox = require('boundingbox')
-const async = {
-  each: require('async/each'),
-  eachLimit: require('async/eachLimit')
-}
+/* global L:false */
+
+const BoundingBox = require('boundingbox')
 const escapeHtml = require('escape-html')
+const OverpassFrontend = require('overpass-frontend')
+const OverpassLayer = require('overpass-layer')
 
-const httpGet = require('./httpGet')
-const convertFromXML = require('./convertFromXML')
-const OSMDB = require('./OSMDB')
-
-const routeTypes = {
-  'tram': {
-    color: '#ff0000'
-  },
-  'bus': {
-    color: '#0000ff'
-  }
-}
+const routeTypes = require('./routeTypes')
+let overpassFrontend
 
 window.onload = function () {
   var map = L.map('map')
+
+  map.attributionControl.setPrefix('<a target="_blank" href="https://github.com/plepe/pt-coverage-map/">pt-coverage-map</a>')
 
   L.tileLayer("https://{s}.wien.gv.at/basemap/geolandbasemap/normal/google3857/{z}/{y}/{x}.png", {
       subdomains : ['maps', 'maps1', 'maps2', 'maps3', 'maps4'],
@@ -42,123 +34,122 @@ window.onload = function () {
   })
   map.addLayer(coverageLayer2)
 
-  let markerLayer = L.featureGroup()
-  map.addLayer(markerLayer)
-
-  let routeLayer = L.featureGroup()
-  map.addLayer(routeLayer)
-
-  let stopLayer = L.featureGroup()
-  map.addLayer(stopLayer)
-
-  let coverageData = {}
+  let coverageData = []
 
   let file = 'data.osm'
-  if (location.search) {
-    file = location.search.substr(1)
+  if (window.location.search) {
+    file = window.location.search.substr(1)
   }
 
-  httpGet(file, { type: 'auto' }, (err, result) => {
-    if (err) {
-      console.log(err)
-      return alert("Can't download geojson file " + file + '.json')
-    }
+  overpassFrontend = new OverpassFrontend(file)
 
-    if (result.request.responseXML) {
-      result = convertFromXML(result.request.responseXML.firstChild)
-    } else {
-      result = JSON.parse(result.body)
-    }
+  let overpassLayer = new OverpassLayer({
+    overpassFrontend,
+    query: 'relation[route]',
+    minZoom: 0,
+    members: true,
+    feature: {
+      markerSymbol: '',
+      styles: []
+    },
+    memberFeature: {
+      pre: function (el) {
+        el._routeType = routeTypes.default
+        if (el.masters.length) {
+          let type = el.masters[0].tags.route
+          if (type in routeTypes) {
+            el._routeType = routeTypes[type]
 
-    if ('marker' in result) {
-      result.marker.forEach(
-        (marker) => {
-          let feature = L.marker([ marker.lat, marker.lon ]).addTo(markerLayer)
-
-          if ('text' in marker) {
-            feature.bindPopup(marker.text)
+            if (el.masters[0].tags.colour) {
+              // comment the next line to force default colors
+              el._color = el.masters[0].tags.colour
+            }
           }
         }
-      )
-    }
 
-    let db = new OSMDB()
-    db.read(result,
-      (err) => {
-        async.eachLimit(db.routes, 4,
-          (route, done) => {
-            async.each(route.members,
-              (member, done) => {
-                let memberId = member.type + '/' + member.ref
-                let element = db.get(member.type, member.ref)
-
-                if (!element) {
-                  console.log("Can't find element " + memberId)
-                  return done()
-                }
-
-                if (!element.routes) {
-                  element.routes = []
-                }
-                element.routes.push(route)
-
-                if (member.role === 'stop') {
-                  if (!(memberId in coverageData)) {
-                    coverageData[memberId] = [ element.lat, element.lon ]
-                  }
-                }
-
-                if (member.role === '' && member.type === 'way') {
-                  let geometry = db.assembleGeometry(element)
-                  let way = L.polyline(geometry.map((geom => [ geom.lat, geom.lon ])),
-                  {
-                    weight: 1.5,
-                    color: route.tags.route in routeTypes ? routeTypes[route.tags.route].color : '#000000'
-                  })
-                  routeLayer.addLayer(way)
-                }
-
-                if (member.role === 'stop' && member.type === 'node') {
-                  if (!member.feature) {
-                    member.feature = L.circleMarker([ element.lat, element.lon ],
-                    {
-                      radius: 4,
-                      weight: 0,
-                      fillColor: route.tags.route in routeTypes ? routeTypes[route.tags.route].color : '#000000',
-                      fillOpacity: 1
-                    })
-                    stopLayer.addLayer(member.feature)
-                  }
-
-                  member.feature.bindPopup(
-                    '<b>' + escapeHtml(element.tags.name) + '</b><br>' +
-                    element.routes.map(route => escapeHtml(route.tags.name)).join('<br>')
-                  )
-                }
-
-                done()
-              },
-              (err) => {
-                done(err)
-              }
-            )
-          },
-          (err) => {
-            let data = Object.values(coverageData)
-            coverageLayer1.setData(data)
-            coverageLayer2.setData(data)
-
-            let bounds = new BoundingBox(data[0])
-            data.slice(1).forEach(
-              (value) => {
-                bounds.extend(value)
-              }
-            )
-
-            map.fitBounds(bounds.toLeaflet())
+        if (!el._color) {
+          el._color = el._routeType.color
+        }
+      },
+      title: '<b>{{ tags.name }}</b>',
+      body: (el) => {
+        if (el.masters) {
+          return el.masters.map(route => escapeHtml(route.tags.name)).join('<br>')
+        }
+      },
+      style: function (el) {
+        if (el.type === 'node') {
+          return {
+            nodeFeature: 'CircleMarker',
+            radius: 4,
+            width: 0,
+            fillColor: el._color,
+            fillOpacity: 1
           }
-        )
+        } else {
+          return {
+            width: 1.5,
+            color: el._color
+          }
+        }
       }
-    )
+    }
   })
+
+  let markerLayer = new OverpassLayer({
+    overpassFrontend,
+    query: 'node[marker]',
+    minZoom: 0,
+    feature: {
+      title: '{{ tags.marker }}',
+      style: {
+        nodeFeature: 'Marker'
+      },
+      markerSymbol: ''
+    }
+  })
+
+  let bounds
+  overpassFrontend.BBoxQuery(
+    'relation[type=route]',
+    { minlon: -180, maxlon: 180, minlat: -90, maxlat: 90 },
+    {
+      members: true,
+      memberCallback: (err, el) => {
+        if (err) {
+          return window.alert(err)
+        }
+
+        if (el.type === 'node') {
+          coverageData.push([ el.geometry.lat, el.geometry.lon ])
+        }
+      }
+    },
+    (err, route) => {
+      if (err) {
+        return window.alert(err)
+      }
+
+      if (bounds) {
+        bounds.extend(route.bounds)
+      } else {
+        bounds = new BoundingBox(route.bounds)
+      }
+    },
+    (err) => {
+      if (err) {
+        return window.alert(err)
+      }
+
+      if (bounds) {
+        map.fitBounds(bounds.toLeaflet())
+      }
+
+      coverageLayer1.setData(coverageData)
+      coverageLayer2.setData(coverageData)
+
+      overpassLayer.addTo(map)
+      markerLayer.addTo(map)
+    }
+  )
 }
