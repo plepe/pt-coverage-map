@@ -55,7 +55,7 @@ window.onload = function () {
     memberFeature: {
       pre: function (el) {
         el._routeType = routeTypes.default
-        if (el.masters.length) {
+        if (el.masters && el.masters.length) {
           let type = el.masters[0].tags.route
           if (type in routeTypes) {
             el._routeType = routeTypes[type]
